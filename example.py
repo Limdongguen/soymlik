@@ -1,116 +1,246 @@
 # -*- coding: utf-8 -*-
+"""
+Created on Thu Sep 14 22:37:57 2017
 
-########################################
-# librosa를 이용하여 샘플 데이터를 읽어서 
-# 성분(mfcc, tempo, beat_frames, beat_times)을 추출
-########################################
-
+@author: lim dongguen
+"""
 import librosa
+import pandas as pd
+import numpy as np
+#import pygame
 
-y, sr = librosa.load('data/sample.mp3')
+#from sklearn.decomposition import KMeans
+from sklearn.cluster import KMeans
+
+y, sr = librosa.load('AppData/Local/Programs/Python/Python36/RhythmGame/1.wav')
+
+D_harmonic2, D_percussive2 = librosa.effects.hpss(y, margin=2)
+
+onset_frames_h2 = librosa.onset.onset_detect(y=D_harmonic2, sr=sr)
+onset_frames_p2 = librosa.onset.onset_detect(y=D_percussive2, sr=sr)
+TIME_h2 = librosa.frames_to_time(onset_frames_h2, sr=sr)
+TIME_p2 = librosa.frames_to_time(onset_frames_p2, sr=sr)
+
+
+
+D = librosa.stft(y)
+Ddb = librosa.amplitude_to_db(D, ref=np.max)
+AVG = sum(Ddb,0.0)/len(Ddb)
+
+DB_h2 = []
+DB_p2 = []
+DB_h2_INDEX = []
+DB_p2_INDEX = []
+Onset_h2 = []
+Onset_p2 = []
+Onset_h2.extend(onset_frames_h2);
+Onset_p2.extend(onset_frames_p2);
+
+for i in range(len(onset_frames_h2)):
+    DB_h2.append(AVG[onset_frames_h2[i]])
+for i in range(len(onset_frames_p2)):
+    DB_p2.append(AVG[onset_frames_p2[i]])
+
+NANIDO = 7
+NANIDO_H = int(len(Onset_h2)/10*NANIDO)
+NANIDO_P = int(len(Onset_p2)/10*NANIDO)
+
+for i in range(NANIDO_H):
+    MAX = 1000
+    MAX_INDEX = -1
+    for j in range(0,len(DB_h2)):
+        if abs(DB_h2[j]) <  MAX:
+            MAX = float(abs(DB_h2[j]))
+            MAX_INDEX = int(j)
+    DB_h2_INDEX.append(Onset_h2[MAX_INDEX])
+    del DB_h2[MAX_INDEX]
+    Onset_h2 = np.delete(Onset_h2,MAX_INDEX)
+    
+for i in range(NANIDO_P):
+    MAX = 1000
+    MAX_INDEX = -1
+    for j in range(0,len(DB_p2)):
+        if abs(DB_p2[j]) <  MAX:
+            MAX = float(abs(DB_p2[j]))
+            MAX_INDEX = int(j)
+    DB_p2_INDEX.append(Onset_p2[MAX_INDEX])
+    del DB_p2[MAX_INDEX]
+    Onset_p2 = np.delete(Onset_p2,MAX_INDEX)
+
+TIME_h2 = librosa.frames_to_time(DB_h2_INDEX, sr=sr)
+TIME_p2 = librosa.frames_to_time(DB_p2_INDEX, sr=sr)
+
 
 mfcc = librosa.feature.mfcc(y=y, sr=sr)
 
-print (mfcc.shape)
+mfcc_T = mfcc
 
-tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
+MDF = mfcc_T.T
 
-beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+KY_h2 = []
+for i in range(NANIDO_H):
+    KY_h2.append(MDF[DB_h2_INDEX[i]])
+    
+KY_p2 = []
+for i in range(NANIDO_P):
+    KY_p2.append(MDF[DB_p2_INDEX[i]])
+    
+kmeans_h2 = KMeans(n_clusters=3, random_state=0).fit(KY_h2)
+kmeans_p2 = KMeans(n_clusters=2, random_state=0).fit(KY_p2)
+
+NOTE = []
+for i in range(0,5):
+    temp = []
+    NOTE.append(temp)
+
+DB_p2_INDEX_TMP = []
+DB_h2_INDEX_TMP = []
+DB_p2_INDEX_TMP.extend(DB_p2_INDEX)
+DB_h2_INDEX_TMP.extend(DB_h2_INDEX)
 
 
-####################
-# 음원에서 harmonic - 사람 목소리 악기 연주등 고주파 영역 추출
-# percussive - 드럼, 비트 등 짧고 연속적이지 않은 영역 추출
-####################
+percen = 0.8
 
-import numpy as np
+for i in range(NANIDO_H):
+    if kmeans_h2.labels_[i] == 0:
+        NOTE[0].append(TIME_h2[i])
+        AVG_90 = abs(AVG[DB_h2_INDEX[i]]) *percen 
+        up = 1
+        down = -1
+        while(1):
+            if (i+up) < len(DB_h2_INDEX_TMP):
+                if AVG_90 > abs(AVG[DB_h2_INDEX[i]+up]) :
+                   # AVG_90 = abs(AVG[DB_p2_INDEX[i+up]])*percen
+                    NOTE[0].append((TIME_h2[i] + 0.02319*up))
+                    up += 1
+                else :
+                    break
+            else:
+                break
+        while(1):
+            if (i+down) > 0:
+                if AVG_90 > abs(AVG[DB_h2_INDEX_TMP[i]+down]) :
+                    NOTE[0].append(TIME_h2[i] + 0.02319*down)
+                    down -= 1
+                else :
+                    break
+            else :
+                break
+            
+    if kmeans_h2.labels_[i] == 1:
+        NOTE[1].append(TIME_h2[i])
+        AVG_90 = AVG[DB_h2_INDEX[i]] *percen 
+        up = 1
+        down = -1
+        while(1):
+            if (i+up) < len(DB_h2_INDEX):
+                if AVG_90 > abs(AVG[DB_h2_INDEX[i]+up]) :
+                    NOTE[1].append((TIME_h2[i] + 0.02319*up))
+                    up += 1
+                else :
+                    break
+            else:
+                break
+        while(1):
+            if (i+down) > 0:
+                if AVG_90 > abs(AVG[DB_h2_INDEX[i]+down]) :
+                    NOTE[1].append(TIME_h2[i] + 0.02319*down)
+                    down -= 1
+                else :
+                    break
+            else :
+                break
+        
+    if kmeans_h2.labels_[i] == 2:
+        NOTE[2].append(TIME_h2[i])
+        AVG_90 = AVG[DB_h2_INDEX[i]] *percen 
+        up = 1
+        down = -1
+        while(1):
+            if (i+up) < len(DB_h2_INDEX):
+                if AVG_90 > abs(AVG[DB_h2_INDEX[i]+up]) :
+                    NOTE[2].append((TIME_h2[i] + 0.02319*up))
+                    up += 1
+                else :
+                    break
+            else:
+                break
+        while(1):
+            if (i+down) > 0:
+                if AVG_90 > abs(AVG[DB_h2_INDEX[i]+down]) :
+                    NOTE[2].append(TIME_h2[i] + 0.02319*down)
+                    down -= 1
+                else :
+                    break
+            else :
+                break
 
-import librosa
+for i in range(NANIDO_P):
+    if kmeans_p2.labels_[i] == 0:
+        NOTE[3].append(TIME_p2[i])
+        AVG_90 = abs(AVG[DB_p2_INDEX[i]]) *percen 
+        up = 1
+        down = -1
+        while(1):
+            if (i+up) < len(DB_p2_INDEX) :
+                if AVG_90 > abs(AVG[DB_p2_INDEX[i]+up]) :
+                    NOTE[3].append((TIME_p2[i] + 0.02319*up))
+                    up += 1
+                else :
+                    break
+            else:
+                break
+        while(1):
+            if (i+down) > 0:
+                if AVG_90 > abs(AVG[DB_p2_INDEX[i]+down]) :
+                    NOTE[3].append(TIME_p2[i] + 0.02319*down)
+                    down -= 1
+                else :
+                    break
+            else :
+                break
+            
+    if kmeans_p2.labels_[i] == 1:
+        NOTE[4].append(TIME_p2[i])
+        AVG_90 = abs(AVG[DB_p2_INDEX[i]]) *percen 
+        up = 1
+        down = -1
+        while(1):
+            if (i+up) < len(DB_p2_INDEX) :
+                if AVG_90 > abs(AVG[DB_p2_INDEX[i]+up]) :
+                    NOTE[4].append(TIME_p2[i] + 0.02319*up)
+                    up += 1
+                else :
+                    break
+            else :
+                break
+        while(1):
+            if (i+down) > 0:
+                if AVG_90 > abs(AVG[DB_p2_INDEX[i]+down]) :
+                    NOTE[4].append(TIME_p2[i] + 0.02319*down)
+                    down -= 1
+                else :
+                    break
+            else :
+                break
 
-hop_length = 512
+for i in range(0,5):
+    NOTE[i].sort()
 
-y_harmonic, y_percussive = librosa.effects.hpss(y)
-
-
-
-#################
-# 음원에서 보컬만 추출하는 소
-################
-
-from __future__ import print_function
-import numpy as np
-import matplotlib.pyplot as plt
-import librosa
-
-import librosa.display
-
-y, sr = librosa.load('audio/Cheese_N_Pot-C_-_16_-_The_Raps_Well_Clean_Album_Version.mp3', duration=120)
-S_full, phase = librosa.magphase(librosa.stft(y))
-idx = slice(*librosa.time_to_frames([30, 35], sr=sr))
-plt.figure(figsize=(12, 4))
-librosa.display.specshow(librosa.amplitude_to_db(S_full[:, idx], ref=np.max),
-                         y_axis='log', x_axis='time', sr=sr)
-plt.colorbar()
-plt.tight_layout()
-
-S_filter = librosa.decompose.nn_filter(S_full,
-                                       aggregate=np.median,
-                                       metric='cosine',
-                                       width=int(librosa.time_to_frames(2, sr=sr)))
-
-S_filter = np.minimum(S_full, S_filter)
-
-margin_i, margin_v = 2, 10
-power = 2
-
-mask_i = librosa.util.softmask(S_filter,
-                               margin_i * (S_full - S_filter),
-                               power=power)
-
-mask_v = librosa.util.softmask(S_full - S_filter,
-                               margin_v * S_filter,
-                               power=power)
-
-S_foreground = mask_v * S_full
-S_background = mask_i * S_full
-
-plt.figure(figsize=(12, 8))
-plt.subplot(3, 1, 1)
-librosa.display.specshow(librosa.amplitude_to_db(S_full[:, idx], ref=np.max),
-                         y_axis='log', sr=sr)
-plt.title('Full spectrum')
-plt.colorbar()
-
-plt.subplot(3, 1, 2)
-librosa.display.specshow(librosa.amplitude_to_db(S_background[:, idx], ref=np.max),
-                         y_axis='log', sr=sr)
-plt.title('Background')
-plt.colorbar()
-plt.subplot(3, 1, 3)
-librosa.display.specshow(librosa.amplitude_to_db(S_foreground[:, idx], ref=np.max),
-                         y_axis='log', x_axis='time', sr=sr)
-plt.title('Foreground')
-plt.colorbar()
-plt.tight_layout()
-plt.show()
-
-#########
-
-##############################
-# 난이도 조절을 위해 margin을 다르게 하여 추출해내는 양을 조절할 수 있다. 
-###################################
-D_harmonic, D_percussive = librosa.effects.hpss(y)
-D_harmonic2, D_percussive2 = librosa.effects.hpss(y, margin=2)
-D_harmonic4, D_percussive4 = librosa.effects.hpss(y, margin=4)
-D_harmonic8, D_percussive8 = librosa.effects.hpss(y, margin=8)
-D_harmonic16, D_percussive16 = librosa.effects.hpss(y, margin=16)
-librosa.output.write_wav('data/D1_h.wav', D_harmonic, sr)
-librosa.output.write_wav('data/D1_p.wav', D_percussive, sr)
-librosa.output.write_wav('data/D2_h.wav', D_harmonic2, sr)
-librosa.output.write_wav('data/D2_p.wav', D_percussive2, sr)
-librosa.output.write_wav('data/D4_h.wav', D_harmonic4, sr)
-librosa.output.write_wav('data/D4_p.wav', D_percussive4, sr)
-librosa.output.write_wav('data/D8_h.wav', D_harmonic8, sr)
-librosa.output.write_wav('data/D8_p.wav', D_percussive8, sr)
-librosa.output.write_wav('data/D16_h.wav', D_harmonic16, sr)
-librosa.output.write_wav('data/D16_p.wav', D_percussive16, sr)
+out_file = open("AppData/Local/Programs/Python/Python36/RhythmGame/new.txt", "w")
+out_file.write("#1\n")
+for i in range(len(NOTE[0])):
+    out_file.write(str(NOTE[0][i])+"\n")
+out_file.write("#2\n")
+for i in range(len(NOTE[3])):
+    out_file.write(str(NOTE[3][i])+"\n")
+out_file.write("#3\n")
+for i in range(len(NOTE[1])):
+    out_file.write(str(NOTE[1][i])+"\n")
+out_file.write("#4\n")
+for i in range(len(NOTE[4])):
+    out_file.write(str(NOTE[4][i])+"\n")
+out_file.write("#5\n")
+for i in range(len(NOTE[2])):
+    out_file.write(str(NOTE[2][i])+"\n")
+out_file.close()
