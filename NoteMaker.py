@@ -2,104 +2,171 @@
 """
 Created on Thu Sep 14 22:37:57 2017
 
-@author: lim dongguen
+@author: CHOIHEE
 """
 import librosa
+import random
 import pandas as pd
 import numpy as np
 #import pygame
-
-#from sklearn.decomposition import KMeans
 from sklearn.cluster import KMeans
-
-y, sr = librosa.load('AppData/Local/Programs/Python/Python36/RhythmGame/1.wav')
-
-D_harmonic2, D_percussive2 = librosa.effects.hpss(y, margin=2)
-
-onset_frames_h2 = librosa.onset.onset_detect(y=D_harmonic2, sr=sr)
-onset_frames_p2 = librosa.onset.onset_detect(y=D_percussive2, sr=sr)
-TIME_h2 = librosa.frames_to_time(onset_frames_h2, sr=sr)
-TIME_p2 = librosa.frames_to_time(onset_frames_p2, sr=sr)
+#from sklearn.decomposition import KMeans
 
 
+y, sr = librosa.load('AppData/Local/Programs/Python/Python36/RhythmGame/ROOKIE.wav')
 
-D = librosa.stft(y)
+"""
+설정 부분 - analsis_name(H = 하모니, P =리듬 , Y =원래)
+note_num 노트 종류의 갯수
+NANIDO = 난이도 조절 (1~10)
+group_size 난이도 조절을 위한 그룹 사이즈 (보통 100~1000)
+"""
+
+analsis_name = "Y" 
+note_num = 4
+NANIDO = 10
+group_size = 100
+
+
+if (analsis_name == "H"):
+    D_harmonic2, D_percussive2 = librosa.effects.hpss(y, margin=8)
+    onset = librosa.onset.onset_detect(y=D_harmonic2, sr=sr)
+    D = librosa.stft(D_harmonic2)
+elif (analsis_name == "D"):
+    D_harmonic2, D_percussive2 = librosa.effects.hpss(y, margin=8)
+    onset = librosa.onset.onset_detect(y=D_percussive2, sr=sr)
+    D = librosa.stft(D_percussive2)
+elif (analsis_name == "Y"):
+    onset = librosa.onset.onset_detect(y=y, sr=sr)
+    D = librosa.stft(y)
+
+TIME = librosa.frames_to_time(onset, sr=sr)
+
+
 Ddb = librosa.amplitude_to_db(D, ref=np.max)
 AVG = sum(Ddb,0.0)/len(Ddb)
 
-DB_h2 = []
-DB_p2 = []
-DB_h2_INDEX = []
-DB_p2_INDEX = []
-Onset_h2 = []
-Onset_p2 = []
-Onset_h2.extend(onset_frames_h2);
-Onset_p2.extend(onset_frames_p2);
 
-for i in range(len(onset_frames_h2)):
-    DB_h2.append(AVG[onset_frames_h2[i]])
-for i in range(len(onset_frames_p2)):
-    DB_p2.append(AVG[onset_frames_p2[i]])
+group_num = int(len(D[1])/group_size +1)
 
-NANIDO = 7
-NANIDO_H = int(len(Onset_h2)/10*NANIDO)
-NANIDO_P = int(len(Onset_p2)/10*NANIDO)
+onset_group = []
+for i in range(group_num):
+    tmp = []
+    size =  len(onset)
+    for j in range(size):
+        if (onset[j] < (i*group_size)+group_size):
+            tmp.append(onset[j])
+        elif(onset[j] >= (i*group_size)+group_size):
+            onset = onset[j:size]
+            break
+    onset_group.append(tmp)
 
-for i in range(NANIDO_H):
-    MAX = 1000
-    MAX_INDEX = -1
-    for j in range(0,len(DB_h2)):
-        if abs(DB_h2[j]) <  MAX:
-            MAX = float(abs(DB_h2[j]))
-            MAX_INDEX = int(j)
-    DB_h2_INDEX.append(Onset_h2[MAX_INDEX])
-    del DB_h2[MAX_INDEX]
-    Onset_h2 = np.delete(Onset_h2,MAX_INDEX)
+groups = []
+tmps = []
+for i in range(group_num):
+    size = len(onset_group[i])
+    tmp = []
     
-for i in range(NANIDO_P):
-    MAX = 1000
-    MAX_INDEX = -1
-    for j in range(0,len(DB_p2)):
-        if abs(DB_p2[j]) <  MAX:
-            MAX = float(abs(DB_p2[j]))
-            MAX_INDEX = int(j)
-    DB_p2_INDEX.append(Onset_p2[MAX_INDEX])
-    del DB_p2[MAX_INDEX]
-    Onset_p2 = np.delete(Onset_p2,MAX_INDEX)
+    for j in range(size):
+        tmp.append(AVG[onset_group[i][j]])
+    tmps.append(tmp)
 
-TIME_h2 = librosa.frames_to_time(DB_h2_INDEX, sr=sr)
-TIME_p2 = librosa.frames_to_time(DB_p2_INDEX, sr=sr)
+groups.append(tmps)
+groups.append(onset_group)
 
 
-mfcc = librosa.feature.mfcc(y=y, sr=sr)
+
+notes = []
+
+for i in range(group_num):
+    
+    nn = int(group_num*NANIDO/100)
+    tmp = []
+    
+    if (nn > (len(groups[0][i]))):
+        NANIDO_num =(len(groups[0][i]))
+    else :
+        NANIDO_num = nn
+    for k in range(NANIDO_num):
+        max = 1000
+        max_index = 0
+        size = len(groups[0][i])
+        for j in range(size-k):
+            if (abs(groups[0][i][j]) < max):
+                max = abs(groups[0][i][j])
+                max_index = j
+        tmp.append(groups[1][i][max_index])
+        del groups[1][i][max_index]
+        del groups[0][i][max_index]
+    notes.append(tmp)
+
+TIME = []
+for i in range(group_num):
+    
+    notes[i].sort()
+    TIME.append( librosa.frames_to_time(notes[i], sr=sr))
+
+
+if (analsis_name == "H"):
+    mfcc = librosa.feature.mfcc(y=D_harmonic2, sr=sr)
+elif (analsis_name == "D"):
+    mfcc = librosa.feature.mfcc(y=D_percussive2, sr=sr)
+elif (analsis_name == "Y"):
+    mfcc = librosa.feature.mfcc(y=y, sr=sr)
 
 mfcc_T = mfcc
-
 MDF = mfcc_T.T
 
-KY_h2 = []
-for i in range(NANIDO_H):
-    KY_h2.append(MDF[DB_h2_INDEX[i]])
-    
-KY_p2 = []
-for i in range(NANIDO_P):
-    KY_p2.append(MDF[DB_p2_INDEX[i]])
-    
-kmeans_h2 = KMeans(n_clusters=3, random_state=0).fit(KY_h2)
-kmeans_p2 = KMeans(n_clusters=2, random_state=0).fit(KY_p2)
+KK = []
+NOTE =[]
 
-NOTE = []
-for i in range(0,5):
-    temp = []
-    NOTE.append(temp)
+for i in range(group_num):
+    size = len(TIME[i])
+    tmp =[]
+    for j in range(size):
+        tmp.append(MDF[notes[i][j]])
+    KK.append(tmp)
 
-DB_p2_INDEX_TMP = []
-DB_h2_INDEX_TMP = []
-DB_p2_INDEX_TMP.extend(DB_p2_INDEX)
-DB_h2_INDEX_TMP.extend(DB_h2_INDEX)
+kmeans = []
+
+for i in range(group_num):
+    tmp = []
+    if(len(KK[i]) >= note_num):
+        TMP = KMeans(n_clusters=note_num, random_state=0).fit(KK[i])
+        for j in range(len(TMP.labels_)):
+            tmp.append(TMP.labels_[j])
+    else:
+        for j in range(len(KK[i])):
+            tmp.append(random.randint(0,note_num-1))
+    kmeans.append(tmp)
+        
+for i in range(group_num):
+    size = len(kmeans[i])
+    for j in range(size):
+        NOTE.append(kmeans[i][j])
+
+tt = []
+for i in range(group_num):
+    size = len(TIME[i])
+    for j in range(size):
+        tt.append(TIME[i][j])
+
+out_file = open("C:/Users/CHOIHEE/Desktop/new1.txt", "w")
+
+for n in range(note_num):
+    out_file.write("#"+str(n+1)+"\n")
+    for i in range(len(tt)):
+            if (NOTE[i] ==n):
+                out_file.write(str(tt[i])+"\n")
 
 
-percen = 0.8
+out_file.write("E\n")
+out_file.close()      
+
+
+"""
+긴노트 부분
+percen = 0.9
 
 for i in range(NANIDO_H):
     if kmeans_h2.labels_[i] == 0:
@@ -175,6 +242,7 @@ for i in range(NANIDO_H):
             else :
                 break
 
+percen = 0.5
 for i in range(NANIDO_P):
     if kmeans_p2.labels_[i] == 0:
         NOTE[3].append(TIME_p2[i])
@@ -224,23 +292,10 @@ for i in range(NANIDO_P):
             else :
                 break
 
-for i in range(0,5):
-    NOTE[i].sort()
 
-out_file = open("AppData/Local/Programs/Python/Python36/RhythmGame/new.txt", "w")
-out_file.write("#1\n")
-for i in range(len(NOTE[0])):
-    out_file.write(str(NOTE[0][i])+"\n")
-out_file.write("#2\n")
-for i in range(len(NOTE[3])):
-    out_file.write(str(NOTE[3][i])+"\n")
-out_file.write("#3\n")
-for i in range(len(NOTE[1])):
-    out_file.write(str(NOTE[1][i])+"\n")
-out_file.write("#4\n")
-for i in range(len(NOTE[4])):
-    out_file.write(str(NOTE[4][i])+"\n")
-out_file.write("#5\n")
-for i in range(len(NOTE[2])):
-    out_file.write(str(NOTE[2][i])+"\n")
-out_file.close()
+
+"""
+
+
+
+
